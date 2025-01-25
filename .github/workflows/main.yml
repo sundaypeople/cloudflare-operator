@@ -1,0 +1,12 @@
+
+name: test
+
+on: [ workflow_dispatch ]
+      
+jobs:
+  release:
+    name: Run on alma9 self host
+    runs-on: alma9
+    steps:
+      - name: echo
+        run: echo test
