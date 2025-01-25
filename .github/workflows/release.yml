@@ -1,0 +1,32 @@
+
+name: reloase
+
+on:
+  push:
+    branches:
+      - "main"
+      
+jobs:
+  release:
+    name: Run on alma9 self host
+    runs-on: alma9
+    steps:
+      - name: Clone the code
+        uses: actions/checkout@v4
+
+      - name: Prepare cloudflared-operator
+        run: |
+          go mod tidy
+          make docker-build IMG=cloudflared-operator:v0.1.0
+          kind load docker-image cloudflared-operator:v0.1.0
+
+      - name: Install Helm
+        run: |
+          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+
+      - name: Verify Helm installation
+        run: helm version
+
+      - name: Get App Version
+        run: 
+

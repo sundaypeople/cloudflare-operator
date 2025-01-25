@@ -1,0 +1,67 @@
+{{- if .Values.webhook.enable }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  name: cloudflared-operator-mutating-webhook-configuration
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- if .Values.certmanager.enable }}
+    cert-manager.io/inject-ca-from: "{{ $.Release.Namespace }}/serving-cert"
+    {{- end }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+webhooks:
+  - name: mcloudflare-v1beta1.kb.io
+    clientConfig:
+      service:
+        name: cloudflared-operator-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /mutate-cloudflare-laininthewired-github-io-v1beta1-cloudflare
+    failurePolicy: Fail
+    sideEffects: None
+    admissionReviewVersions:
+      - v1
+    rules:
+      - operations:
+          - CREATE
+          - UPDATE
+        apiGroups:
+          - cloudflare.laininthewired.github.io
+        apiVersions:
+          - v1beta1
+        resources:
+          - cloudflares
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: cloudflared-operator-validating-webhook-configuration
+  namespace: {{ .Release.Namespace }}
+  annotations:
+    {{- if .Values.certmanager.enable }}
+    cert-manager.io/inject-ca-from: "{{ $.Release.Namespace }}/serving-cert"
+    {{- end }}
+  labels:
+    {{- include "chart.labels" . | nindent 4 }}
+webhooks:
+  - name: vcloudflare-v1beta1.kb.io
+    clientConfig:
+      service:
+        name: cloudflared-operator-webhook-service
+        namespace: {{ .Release.Namespace }}
+        path: /validate-cloudflare-laininthewired-github-io-v1beta1-cloudflare
+    failurePolicy: Fail
+    sideEffects: None
+    admissionReviewVersions:
+      - v1
+    rules:
+      - operations:
+          - CREATE
+          - UPDATE
+        apiGroups:
+          - cloudflare.laininthewired.github.io
+        apiVersions:
+          - v1beta1
+        resources:
+          - cloudflares
+{{- end }}
