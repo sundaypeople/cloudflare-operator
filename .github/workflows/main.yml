@@ -6,7 +6,42 @@ on: [ workflow_dispatch ]
 jobs:
   release:
     name: Run on alma9 self host
-    runs-on: alma9
+    runs-on: self-hosted
     steps:
-      - name: echo
-        run: echo test
+      - name: Clone the code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+
+      - name: semantic -version
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "v"
+          bump_each_commit: true
+          debug: true
+      - name: Print Diagnostic Output
+        run: echo "$DEBUG_OUTPUT"
+        env:
+          DEBUG_OUTPUT: ${{ steps.version.outputs.debug_output }}
+
+
+
+      # - name: echo
+      #   run: echo test
+      
+      # - name: Get latest tag
+      #   id: get_latest_tag
+      #   run: |
+      #     latest_tag=$(git describe --tags `git rev-list --tags --max-count=1`)
+      #     echo "LATEST_TAG=$latest_tag" >> $GITHUB_ENV
+      # - name: Determine version bump
+      #   id: determine_bump
+      #   run: |
+      #     if [[ "${{ github.event.pull_request.labels.*.name }}" == *"major"* ]]; then
+      #       echo "BUMP=major" >> $GITHUB_ENV
+      #     elif [[ "${{ github.event.pull_request.labels.*.name }}" == *"minor"* ]]; then
+      #       echo "BUMP=minor" >> $GITHUB_ENV
+      #     else
+      #       echo "BUMP=patch" >> $GITHUB_ENV
+      #     fi

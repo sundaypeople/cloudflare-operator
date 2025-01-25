@@ -2,9 +2,11 @@
 name: reloase
 
 on:
-  push:
+  pull_request:
+    types: [closed]
     branches:
-      - "main"
+      - main
+
       
 jobs:
   release:
@@ -27,6 +29,4 @@ jobs:
       - name: Verify Helm installation
         run: helm version
 
-      - name: Get App Version
-        run: 
 
