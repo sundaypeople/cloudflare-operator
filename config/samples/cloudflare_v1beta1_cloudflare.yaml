@@ -1,0 +1,13 @@
+apiVersion: cloudflare.laininthewired.github.io/v1beta1
+kind: Cloudflare
+metadata:
+  labels:
+    app.kubernetes.io/name: cloudflared-operator
+    app.kubernetes.io/managed-by: kustomize
+  name: cloudflare-sample
+spec:
+  # TODO(user): Add fields here
+  tunnel_id: f8644f16-aa0a-47a0-837e-f033a8c58651
+  ingress:
+  - hostname: crd.qpid.jp
+    service: http://web-service:80
