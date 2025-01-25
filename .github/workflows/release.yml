@@ -9,7 +9,7 @@ on:
 jobs:
   release:
     name: Run on alma9 self host
-    runs-on: alma9
+    runs-on: self-hosted
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
