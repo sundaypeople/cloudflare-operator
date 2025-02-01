@@ -19,6 +19,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -128,6 +130,7 @@ func (r *CloudflareReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	return ctrl.Result{}, nil
 }
+
 func (r *CloudflareReconciler) reconcileConfigMap(ctx context.Context, cloudflare cloudflarev1beta1.Cloudflare) error {
 	logger := log.FromContext(ctx)
 
@@ -201,58 +204,6 @@ func (r *CloudflareReconciler) reconcileDeployment(ctx context.Context, cloudlfa
 	logger := log.FromContext(ctx)
 	depName := "cloudflare-" + cloudlfare.Name
 	cloudflareimage := "cloudflare/cloudflared:2025.1.0"
-	// cloudflareimage := "nginx:1.14.2"
-
-	// dep := appsv1apply.Deployment(depName, mdView.Namespace).
-	// 			WithLabels(map[string]string{
-	// 				"app.kubernetes.io/name":       "cloudflare",
-	// 				"app.kubernetes.io/instance":   Cloudflare.Name,
-	// 				"app.kubernetes.io/created-by": "cloudflared-operator-controller-manager",
-	// 			}).
-	// 			WithSpec(appsv1apply.DeploymentSpec().
-	// 				WithReplicas(mdView.Spec.Replicas).
-	// 				WithSelector(metav1apply.LabelSelector().WithMatchLabels(map[string]string{
-	// 					"app.kubernetes.io/name":       "cloudflare",
-	// 					"app.kubernetes.io/instance":   Cloudflare.Name,
-	// 					"app.kubernetes.io/created-by": "cloudflared-operator-controller-manager",
-	// 				})).
-	// 				WithTemplate(corev1apply.PodTemplateSpec().
-	// 					WithLabels(map[string]string{
-	// 						"app.kubernetes.io/name":       "cloudflare",
-	// 						"app.kubernetes.io/instance":   Cloudflare.Name,
-	// 						"app.kubernetes.io/created-by": "cloudflared-operator-controller-manager",
-	// 					}).
-	// 					WithSpec(corev1apply.PodSpec().
-	// 					WithContainers(corev1apply.Container().
-	// 						WithName("cloudflare").
-	// 						WithImage(viewerImage).
-	// 						WithImagePullPolicy(corev1.PullIfNotPresent).
-	// 						WithCommand("cloudflare").
-	// 						WithArgs("serve", "--hostname", "0.0.0.0").
-	// 						WithVolumeMounts(corev1apply.VolumeMount().
-	// 							WithName("markdowns").
-	// 							WithMountPath("/book/src"),
-	// 						).
-	// 						WithPorts(corev1apply.ContainerPort().
-	// 							WithName("http").
-	// 							WithProtocol(corev1.ProtocolTCP).
-	// 							WithContainerPort(3000),
-	// 						).
-	// 						WithLivenessProbe(corev1apply.Probe().
-	// 							WithHTTPGet(corev1apply.HTTPGetAction().
-	// 								WithPort(intstr.FromString("http")).
-	// 								WithPath("/").
-	// 								WithScheme(corev1.URISchemeHTTP),
-	// 							),
-	// 						).
-	// 						WithReadinessProbe(corev1apply.Probe().
-	// 							WithHTTPGet(corev1apply.HTTPGetAction().
-	// 								WithPort(intstr.FromString("http")).
-	// 								WithPath("/").
-	// 								WithScheme(corev1.URISchemeHTTP),
-	// 							),
-	// 						),
-	// 					).
 	owner, err := controllerReference(cloudlfare, r.Scheme)
 	if err != nil {
 		return err
@@ -278,6 +229,8 @@ func (r *CloudflareReconciler) reconcileDeployment(ctx context.Context, cloudlfa
 					"app.kubernetes.io/name":       "cloudflare",
 					"app.kubernetes.io/instance":   cloudlfare.Name,
 					"app.kubernetes.io/created-by": "cloudflared-operator-controller-manager",
+					//  trigger to restart
+					"kubectl.kubernetes.io/restartedAt": strings.ReplaceAll(time.Now().Format(time.RFC3339), ":", "-"),
 				}).
 				WithSpec(corev1apply.PodSpec().
 					WithContainers(
@@ -289,6 +242,8 @@ func (r *CloudflareReconciler) reconcileDeployment(ctx context.Context, cloudlfa
 								"--config",
 								"/etc/cloudflared/config/config.yaml",
 								"--http2-origin",
+								"--loglevel",
+								"debug",
 								"run",
 							).
 							// WithCommand("/bin/sh").
@@ -402,24 +357,6 @@ func (r *CloudflareReconciler) updateStatus(ctx context.Context, Cloudflare clou
 	} else if err != nil {
 		return ctrl.Result{}, err
 	}
-
-	// var svc corev1.Service
-	// err = r.Get(ctx, client.ObjectKey{Namespace: Cloudflare.Namespace, Name: "cloudflare-" + Cloudflare.Name}, &svc)
-	// if errors.IsNotFound(err) {
-	// 	meta.SetStatusCondition(&Cloudflare.Status.Conditions, metav1.Condition{
-	// 		Type:    viewv1.TypeMarkdownViewDegraded,
-	// 		Status:  metav1.ConditionTrue,
-	// 		Reason:  "Reconciling",
-	// 		Message: "Service not found",
-	// 	})
-	// 	meta.SetStatusCondition(&Cloudflare.Status.Conditions, metav1.Condition{
-	// 		Type:   viewv1.TypeMarkdownViewAvailable,
-	// 		Status: metav1.ConditionFalse,
-	// 		Reason: "Reconciling",
-	// 	})
-	// } else if err != nil {
-	// 	return ctrl.Result{}, err
-	// }
 
 	var dep appsv1.Deployment
 	err = r.Get(ctx, client.ObjectKey{Namespace: Cloudflare.Namespace, Name: "viewer-" + Cloudflare.Name}, &dep)
