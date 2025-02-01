@@ -1,4 +1,3 @@
-
 name: test
 
 on: [ workflow_dispatch ]
@@ -30,15 +29,20 @@ jobs:
 
       - name: Login to Docker Hub
         uses: docker/login-action@v3
+        env:
+          USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         with:
-          username: ${{ env.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          username: ${{ env.USERNAME }}
+          password: ${{ env.TOKEN }}
           
       - name: Build and push
         uses: docker/build-push-action@v6
+        env:
+          USERNAME: ${{ vars.DOCKERHUB_USERNAME }} 
         with:
           push: true
-          tags: ${{ env.DOCKERHUB_USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}
+          tags: ${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}
       
         
       # - name: echo
