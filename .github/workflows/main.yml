@@ -1,7 +1,8 @@
 name: test
 
 on: [ workflow_dispatch ]
-      
+env:
+  TARGET_REPO: cloudflare-operator-helm
 jobs:
   release:
     name: Run on alma9 self host
@@ -38,7 +39,7 @@ jobs:
         with:
           username: ${{ env.USERNAME }}
           password: ${{ env.TOKEN }}
-          
+
       - name: Build and push
         uses: docker/build-push-action@v6
         env:
@@ -46,6 +47,66 @@ jobs:
         with:
           push: true
           tags: ${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}
+
+      - name: Install Kubebuilder
+        uses: RyanSiu1995/kubebuilder-action@v1.3.1
+        with:
+          # オプションでインストールする Kubebuilder のバージョンを指定可能
+          # version: "2.3.1" あるいは "3.0.0" など（デフォルトはアクションの仕様に依存）
+          version: "4.5.0"
+  
+      - name: make manifest
+        run: make manifests
+
+      - name: make Helm chart
+        run: kubebuilder edit --plugins=helm/v1-alpha
+      
+      - id: create
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.PRIVATE_KEY }}
+          repositories: ${{ env.TARGET_REPO }}
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner}}/${{ env.TARGET_REPO }}  
+          path: ${{ env.TARGET_REPO }}
+          token: ${{ steps.create.outputs.token }} 
+
+      - name: Sync files using rsync
+        run: |
+          rsync -av --delete ./dist/chart ${{ env.TARGET_REPO }}
+
+      - name: Install yq
+        run: |
+          wget https://github.com/mikefarah/yq/releases/download/v4.34.1/yq_linux_amd64 -O /usr/local/bin/yq
+          chmod +x /usr/local/bin/yq
+
+      - name: Update appVersion in Chart.yaml
+        working-directory: ${{ env.TARGET_REPO }}
+        run: |
+          # ここでは appVersion を "0.2.0" に更新
+          yq eval '.appVersion = "${{ steps.version.outputs.version_tag }}"' -i Chart.yaml
+          yq eval '.controllerManager.container.image.repository = "${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}"' -i testyq.yml
+
+      - name: Commit changes in target repository
+        uses: EndBug/add-and-commit@v9
+        with:
+          author_name: "GitHub Actions"
+          author_email: "actions@github.com"
+          message: "Sync files from source repository"
+          cwd: ${{ env.TARGET_REPO }} 
+
+      
+      - name: Push changes to target repository
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ steps.create.outputs.token }} 
+          branch: main
+          directory: ${{ env.TARGET_REPO }} 
+  
+      
       
         
       # - name: echo
