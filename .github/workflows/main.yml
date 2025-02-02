@@ -54,12 +54,8 @@ jobs:
         with:
           push: true
           tags: ${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}
-          cache-from: |
-            ${{ env.USERNAME }}/cloudflare-controller:cache
-            type=local,src=~/cache
-          cache-to: |
-            ${{ env.USERNAME }}/cloudflare-controller:cache
-            type=local,src=~/cache
+          cache-from: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
+          cache-to: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
 
       - name: Install Kubebuilder
         uses: RyanSiu1995/kubebuilder-action@v1.3.1
