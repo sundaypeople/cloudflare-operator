@@ -54,8 +54,8 @@ jobs:
         with:
           push: true
           tags: ${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}
-          cache-from: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
-          cache-to: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
+          # cache-from: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
+          # cache-to: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
 
       - name: Install Kubebuilder
         uses: RyanSiu1995/kubebuilder-action@v1.3.1
@@ -82,11 +82,6 @@ jobs:
           repository: ${{ github.repository_owner}}/${{ env.TARGET_REPO }}  
           path: ${{ env.TARGET_REPO }}
           token: ${{ steps.create.outputs.token }} 
-
-      - name: Sync files using rsync
-        run: |
-          rsync -av --delete ./dist/chart ${{ env.TARGET_REPO }}
-
       - name: Install yq
         run: |
           wget https://github.com/mikefarah/yq/releases/download/v4.34.1/yq_linux_amd64 -O /usr/local/bin/yq
@@ -96,8 +91,12 @@ jobs:
         working-directory: ${{ env.TARGET_REPO }}
         run: |
           # ここでは appVersion を "0.2.0" に更新
-          yq eval '.appVersion = "${{ steps.version.outputs.version_tag }}"' -i Chart.yaml
-          yq eval '.controllerManager.container.image.repository = "${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}"' -i testyq.yml
+          yq eval '.appVersion = "${{ steps.version.outputs.version_tag }}"' -i dist/chart/Chart.yaml
+          yq eval '.controllerManager.container.image.repository = "${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}"' -i dist/chart/values.yaml
+
+      - name: Sync files using rsync
+        run: |
+          rsync -av --delete ./dist/chart ${{ env.TARGET_REPO }}/helm
 
       - name: Commit changes in target repository
         uses: EndBug/add-and-commit@v9
