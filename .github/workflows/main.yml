@@ -116,7 +116,7 @@ jobs:
         uses: ad-m/github-push-action@v0.6.0
         with:
           github_token: ${{ steps.create.outputs.token }} 
-          repository: ${{ env.TARGET_REPO }} 
+          repository: laininthewired/${{ env.TARGET_REPO }} 
           branch: main
           directory: ${{ env.TARGET_REPO }} 
   
