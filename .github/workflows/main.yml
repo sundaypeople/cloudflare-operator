@@ -101,7 +101,7 @@ jobs:
 
       - name: Sync files using rsync
         run: |
-          rsync -av --delete ./dist/chart ${{ env.TARGET_REPO }}/helm
+          rsync -av --delete ./dist/chart ${{ env.TARGET_REPO }}/charts
 
       - name: Commit changes in target repository
         uses: EndBug/add-and-commit@v9
