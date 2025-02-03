@@ -73,7 +73,6 @@ jobs:
 
       - name: make Helm chart
         run: | 
-          kubebuilder init --plugins=deploy-image.go.kubebuilder.io/v1-alpha --project-version=3
           kubebuilder edit --plugins=helm/v1-alpha
       
       - id: create
