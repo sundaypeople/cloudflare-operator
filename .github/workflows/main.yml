@@ -72,7 +72,9 @@ jobs:
         run: make manifests
 
       - name: make Helm chart
-        run: kubebuilder edit --plugins=helm/v1-alpha
+        run: | 
+          kubebuilder init --plugins=deploy-image.go.kubebuilder.io/v1-alpha --project-version=3
+          kubebuilder edit --plugins=helm/v1-alpha
       
       - id: create
         uses: actions/create-github-app-token@v1
