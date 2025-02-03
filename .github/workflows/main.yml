@@ -93,7 +93,7 @@ jobs:
           chmod +x /home/runner/.local/bin/yq
 
       - name: Update appVersion in Chart.yaml
-        working-directory: ${{ env.TARGET_REPO }}
+        # working-directory: ${{ env.TARGET_REPO }}
         run: |
           # ここでは appVersion を "0.2.0" に更新
           yq eval '.appVersion = "${{ steps.version.outputs.version_tag }}"' -i dist/chart/Chart.yaml
