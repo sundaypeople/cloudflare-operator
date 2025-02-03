@@ -1,13 +1,11 @@
+name: test
 
-name: reloase
-
-on:
-  pull_request:
-    types: [closed]
+on: 
+  push:
     branches:
-      - main
-
-      
+      - master
+env:
+  TARGET_REPO: cloudflare-operator-helm
 jobs:
   release:
     name: Run on alma9 self host
@@ -15,18 +13,96 @@ jobs:
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: setup go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23.0'
 
-      - name: Prepare cloudflared-operator
+      - name: semantic -version
+        id: version
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: "v"
+          bump_each_commit: true
+          debug: true
+
+      - name: semantic -version
+        run: echo ${{ steps.version.outputs.version_tag }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          cache-binary: true
+          driver: docker
+
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        env:
+          USERNAME: ${{ vars.DOCKERHUB_USERNAME }}
+          TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        with:
+          username: ${{ env.USERNAME }}
+          password: ${{ env.TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        env:
+          USERNAME: ${{ vars.DOCKERHUB_USERNAME }} 
+        with:
+          push: true
+          tags: ${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}
+  
+      - name: make manifest
+        run: make manifests
+
+      - name: make Helm chart
+        run: | 
+          kubebuilder edit --plugins=helm/v1-alpha
+      
+      - id: create
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.PRIVATE_KEY }}
+          repositories: ${{ env.TARGET_REPO }}
+
+      - uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner}}/${{ env.TARGET_REPO }}  
+          path: ${{ env.TARGET_REPO }}
+          token: ${{ steps.create.outputs.token }} 
+      - name: Install yq
         run: |
-          go mod tidy
-          make docker-build IMG=cloudflared-operator:v0.1.0
-          kind load docker-image cloudflared-operator:v0.1.0
+          wget https://github.com/mikefarah/yq/releases/download/v4.34.1/yq_linux_amd64 -O /home/runner/.local/bin/yq
+          chmod +x /home/runner/.local/bin/yq
 
-      - name: Install Helm
+      - name: Update appVersion in Chart.yaml
+        # working-directory: ${{ env.TARGET_REPO }}
         run: |
-          curl https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          # ここでは appVersion を "0.2.0" に更新
+          yq eval '.appVersion = "${{ steps.version.outputs.version_tag }}"' -i dist/chart/Chart.yaml
+          yq eval '.controllerManager.container.image.repository = "${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.version_tag }}"' -i dist/chart/values.yaml
 
-      - name: Verify Helm installation
-        run: helm version
+      - name: Sync files using rsync
+        run: |
+          rsync -av --delete ./dist/chart/ ${{ env.TARGET_REPO }}/charts
 
+      - name: Commit changes in target repository
+        uses: EndBug/add-and-commit@v9
+        with:
+          author_name: "GitHub Actions"
+          author_email: "actions@github.com"
+          message: "Sync files from source repository"
+          cwd: ${{ env.TARGET_REPO }} 
 
+      - name: Push changes to target repository
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ steps.create.outputs.token }} 
+          repository: laininthewired/${{ env.TARGET_REPO }} 
+          branch: main
+          directory: ${{ env.TARGET_REPO }} 
