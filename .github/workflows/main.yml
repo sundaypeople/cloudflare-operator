@@ -63,11 +63,10 @@ jobs:
           # cache-to: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
 
       - name: Install Kubebuilder
-        uses: RyanSiu1995/kubebuilder-action@v1.3.1
-        with:
-          # オプションでインストールする Kubebuilder のバージョンを指定可能
-          # version: "2.3.1" あるいは "3.0.0" など（デフォルトはアクションの仕様に依存）
-          kubebuilderOnly: true
+        run: |
+          curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+          chmod +x kubebuilder && sudo mv kubebuilder /usr/local/bin/
+ 
   
       - name: make manifest
         run: make manifests
