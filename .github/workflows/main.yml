@@ -62,10 +62,10 @@ jobs:
           # cache-from: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
           # cache-to: ${{ env.USERNAME }}/cloudflare-controller:cache,type=local,src=~/cache
 
-      - name: Install Kubebuilder
-        run: |
-          curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
-          chmod +x kubebuilder && sudo mv kubebuilder /home/runner/bin
+      # - name: Install Kubebuilder
+      #   run: |
+      #     curl -L -o kubebuilder "https://go.kubebuilder.io/dl/latest/$(go env GOOS)/$(go env GOARCH)"
+      #     chmod +x kubebuilder && sudo mv kubebuilder /home/runner/bin
  
   
       - name: make manifest
