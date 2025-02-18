@@ -27,9 +27,7 @@ jobs:
         id: version
         uses: anothrNick/github-tag-action@v1 # Don't use @master or @v1 unless you're happy to test the latest version
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # if you don't want to set write permissions use a PAT token
           WITH_V: true
-          PRERELEASE: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
