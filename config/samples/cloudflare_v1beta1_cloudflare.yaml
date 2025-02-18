@@ -11,3 +11,6 @@ spec:
   ingress:
   - hostname: crd.qpid.jp
     service: http://web-service:80
+  # - hostname: test.qpid.jp
+  #   service: http://10.0.10.105:80
+  replicas: 2
