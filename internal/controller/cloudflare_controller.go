@@ -42,6 +42,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	cf "github.com/cloudflare/cloudflare-go"
 	cloudflarev1beta1 "github.com/laininthewired/cloudflare-ingress-controller/api/v1beta1"
 	"gopkg.in/yaml.v3"
 )
@@ -110,6 +111,11 @@ func (r *CloudflareReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 	if !cf.ObjectMeta.DeletionTimestamp.IsZero() {
+		if err := r.deleteDNSRecord(ctx, cf); err != nil {
+			logger.Error(err, "failed to delete DNS records during finalization")
+			return ctrl.Result{}, err
+		}
+		// Finalizer の解除処理をここで実施（必要に応じて）
 		return ctrl.Result{}, nil
 	}
 
@@ -124,6 +130,12 @@ func (r *CloudflareReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		result, err2 := r.updateStatus(ctx, cf)
 		logger.Error(err2, "unable to update status")
 		return result, err
+	}
+
+	// DNS レコードの作成／更新
+	if err := r.reconcileDNSRecord(ctx, cf); err != nil {
+		logger.Error(err, "failed to reconcile DNS records")
+		return ctrl.Result{}, err
 	}
 
 	// TODO(user): your logic here
@@ -418,3 +430,209 @@ func controllerReference(cloudflare cloudflarev1beta1.Cloudflare, scheme *runtim
 // kubectl logs -n cloudflared-operator-system deployments/cloudflared-operator-controller-manager -c manager -f
 // kubectl rollout restart -n cloudflared-operator-system deployment cloudflared-operator-controller-manager
 // kc delete cloudflares cloudflare-sample
+
+// extractZoneFromHostname はホスト名からゾーン名（例："a.qpid.jp" → "qpid.jp"）を単純に抽出します。
+// ※ 実際は publicsuffix パッケージなどを利用して正確に判定してください。
+func extractZoneFromHostname(hostname string) (string, error) {
+	parts := strings.Split(hostname, ".")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid hostname: %s", hostname)
+	}
+	zone := fmt.Sprintf("%s.%s", parts[len(parts)-2], parts[len(parts)-1])
+	return zone, nil
+}
+
+// getAPITokenFromSecret は、指定された namespace/name の Secret から API トークン（キー "apiToken"）を取得します。
+func (r *CloudflareReconciler) getAPITokenFromSecret(ctx context.Context) (string, error) {
+	// ここでは固定値として設定しています。必要に応じて CRD の Spec や ConfigMap 等から動的に取得してください。
+	secret := &corev1.Secret{}
+	secretName := "cloudflare-api-token"
+	secretNamespace := "default"
+	if err := r.Get(ctx, client.ObjectKey{Namespace: secretNamespace, Name: secretName}, secret); err != nil {
+		return "", fmt.Errorf("failed to get secret %s/%s: %w", secretNamespace, secretName, err)
+	}
+	apiTokenBytes, ok := secret.Data["apiToken"]
+	if !ok {
+		return "", fmt.Errorf("secret %s/%s does not contain key 'apiToken'", secretNamespace, secretName)
+	}
+	apiToken := strings.TrimSpace(string(apiTokenBytes))
+	return apiToken, nil
+}
+
+func (r *CloudflareReconciler) reconcileDNSRecord(ctx context.Context, cfCR cloudflarev1beta1.Cloudflare) error {
+	logger := log.FromContext(ctx)
+
+	// API トークンは Secret から取得する
+	apiToken, err := r.getAPITokenFromSecret(ctx)
+	if err != nil {
+		return err
+	}
+
+	// API クライアントの初期化
+	api, err := cf.NewWithAPIToken(apiToken)
+	if err != nil {
+		return fmt.Errorf("failed to create Cloudflare API client: %w", err)
+	}
+
+	tunnelID := cfCR.Spec.TunnelID
+	if tunnelID == "" {
+		return fmt.Errorf("tunnelID is empty in CRD spec")
+	}
+	targetCNAME := fmt.Sprintf("%s.cfargotunnel.com", tunnelID)
+
+	// CRD の ingress ルールをゾーン毎にグループ化（key: zoneID、value: 対象ホストの存在マップ）
+	desiredRecords := make(map[string]map[string]bool)
+
+	for _, rule := range cfCR.Spec.Ingress {
+		if rule.Hostname == "" {
+			continue
+		}
+		zoneName, err := extractZoneFromHostname(rule.Hostname)
+		if err != nil {
+			logger.Error(err, "failed to extract zone from hostname", "hostname", rule.Hostname)
+			continue
+		}
+		zoneID, err := api.ZoneIDByName(zoneName)
+		if err != nil {
+			logger.Error(err, "failed to get zone ID", "zoneName", zoneName)
+			continue
+		}
+		// 記録用マップ
+		if desiredRecords[zoneID] == nil {
+			desiredRecords[zoneID] = make(map[string]bool)
+		}
+		desiredRecords[zoneID][rule.Hostname] = true
+
+		// zoneID を ResourceContainer 型に変換して渡す
+		resourceContainer := &cf.ResourceContainer{Identifier: zoneID}
+
+		// DNS レコードの取得（ListDNSRecords は (records, resp, error) を返す）
+		listParams := cf.ListDNSRecordsParams{
+			Type: "CNAME",
+			Name: rule.Hostname,
+		}
+		records, _, err := api.ListDNSRecords(ctx, resourceContainer, listParams)
+		if err != nil {
+			logger.Error(err, "failed to list DNS records", "hostname", rule.Hostname)
+			continue
+		}
+
+		if len(records) == 0 {
+			// レコードがなければ作成
+			proxied := false
+			createParams := cf.CreateDNSRecordParams{
+				Type:    "CNAME",
+				Name:    rule.Hostname,
+				Content: targetCNAME,
+				TTL:     120,
+				Proxied: &proxied,
+			}
+			_, err := api.CreateDNSRecord(ctx, resourceContainer, createParams)
+			if err != nil {
+				logger.Error(err, "failed to create DNS record", "hostname", rule.Hostname)
+				continue
+			}
+			logger.Info("DNS record created", "hostname", rule.Hostname, "content", targetCNAME)
+		} else {
+			// 存在するレコードについて、最初のものを対象とする
+			record := records[0]
+			if record.Content != targetCNAME {
+				proxied := false
+				updateParams := cf.UpdateDNSRecordParams{
+					ID:      record.ID,
+					Type:    "CNAME",
+					Name:    rule.Hostname,
+					Content: targetCNAME,
+					TTL:     120,
+					Proxied: &proxied,
+				}
+				updatedRecord, err := api.UpdateDNSRecord(ctx, resourceContainer, updateParams)
+				if err != nil {
+					logger.Error(err, "failed to update DNS record", "hostname", rule.Hostname)
+					continue
+				}
+				logger.Info("DNS record updated", "hostname", rule.Hostname, "content", updatedRecord.Content)
+			} else {
+				logger.Info("DNS record is already up-to-date", "hostname", rule.Hostname)
+			}
+		}
+	}
+
+	// 各ゾーンごとに、CRD に存在しないホストのレコードを削除する
+	for zoneID, desiredHostnames := range desiredRecords {
+		resourceContainer := &cf.ResourceContainer{Identifier: zoneID}
+		listParams := cf.ListDNSRecordsParams{
+			Type: "CNAME",
+		}
+		records, _, err := api.ListDNSRecords(ctx, resourceContainer, listParams)
+		if err != nil {
+			logger.Error(err, "failed to list DNS records for cleanup", "zoneID", zoneID)
+			continue
+		}
+		for _, rec := range records {
+			// 今回の tunnel 用レコードで、かつ CRD に存在しなければ削除
+			if rec.Content == targetCNAME {
+				if _, exists := desiredHostnames[rec.Name]; !exists {
+					err = api.DeleteDNSRecord(ctx, resourceContainer, rec.ID)
+					if err != nil {
+						logger.Error(err, "failed to delete DNS record", "hostname", rec.Name, "recordID", rec.ID)
+						continue
+					}
+					logger.Info("DNS record deleted", "hostname", rec.Name, "recordID", rec.ID)
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+// deleteDNSRecord は、CRD 削除時に CRD 内の ingress ルールに対応する DNS レコードを削除します。
+func (r *CloudflareReconciler) deleteDNSRecord(ctx context.Context, cfCR cloudflarev1beta1.Cloudflare) error {
+	logger := log.FromContext(ctx)
+
+	apiToken, err := r.getAPITokenFromSecret(ctx)
+	if err != nil {
+		return err
+	}
+	api, err := cf.NewWithAPIToken(apiToken)
+	if err != nil {
+		return fmt.Errorf("failed to create Cloudflare API client: %w", err)
+	}
+
+	for _, rule := range cfCR.Spec.Ingress {
+		if rule.Hostname == "" {
+			continue
+		}
+		zoneName, err := extractZoneFromHostname(rule.Hostname)
+		if err != nil {
+			logger.Error(err, "failed to extract zone from hostname", "hostname", rule.Hostname)
+			continue
+		}
+		zoneID, err := api.ZoneIDByName(zoneName)
+		if err != nil {
+			logger.Error(err, "failed to get zone ID", "zoneName", zoneName)
+			continue
+		}
+		resourceContainer := &cf.ResourceContainer{Identifier: zoneID}
+		listParams := cf.ListDNSRecordsParams{
+			Type: "CNAME",
+			Name: rule.Hostname,
+		}
+		records, _, err := api.ListDNSRecords(ctx, resourceContainer, listParams)
+		if err != nil {
+			logger.Error(err, "failed to list DNS records", "hostname", rule.Hostname)
+			continue
+		}
+		for _, record := range records {
+			err = api.DeleteDNSRecord(ctx, resourceContainer, record.ID)
+			if err != nil {
+				logger.Error(err, "failed to delete DNS record", "hostname", rule.Hostname, "recordID", record.ID)
+				continue
+			}
+			logger.Info("DNS record deleted", "hostname", rule.Hostname, "recordID", record.ID)
+		}
+	}
+
+	return nil
+}

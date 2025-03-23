@@ -28,3 +28,4 @@ go.work
 
 .act.env
 .act.secrets
+secret.yml
