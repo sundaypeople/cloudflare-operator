@@ -18,6 +18,8 @@ package controller
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -42,6 +44,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
+	"github.com/cloudflare/cloudflare-go"
 	cf "github.com/cloudflare/cloudflare-go"
 	cloudflarev1beta1 "github.com/laininthewired/cloudflare-ingress-controller/api/v1beta1"
 	"gopkg.in/yaml.v3"
@@ -102,7 +105,21 @@ func (r *CloudflareReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	logger := log.FromContext(ctx)
 
 	var cf cloudflarev1beta1.Cloudflare
-	err := r.Get(ctx, req.NamespacedName, &cf)
+	var tunnel cloudflarev1beta1.Tunnel
+
+	err := r.Get(ctx, req.NamespacedName, &tunnel)
+	if errors.IsNotFound(err) {
+		return ctrl.Result{}, nil
+	}
+
+	err = r.reconcileTunnel(ctx, tunnel)
+	if err != nil {
+		result, err2 := r.updateStatus(ctx, cf)
+		logger.Error(err2, "unable to update status")
+		return result, err
+	}
+
+	err = r.Get(ctx, req.NamespacedName, &cf)
 	if errors.IsNotFound(err) {
 		return ctrl.Result{}, nil
 	}
@@ -443,27 +460,30 @@ func extractZoneFromHostname(hostname string) (string, error) {
 }
 
 // getAPITokenFromSecret は、指定された namespace/name の Secret から API トークン（キー "apiToken"）を取得します。
-func (r *CloudflareReconciler) getAPITokenFromSecret(ctx context.Context) (string, error) {
+func (r *CloudflareReconciler) getAPITokenFromSecret(ctx context.Context) (string, string, error) {
 	// ここでは固定値として設定しています。必要に応じて CRD の Spec や ConfigMap 等から動的に取得してください。
 	secret := &corev1.Secret{}
 	secretName := "cloudflare-api-token"
 	secretNamespace := "default"
 	if err := r.Get(ctx, client.ObjectKey{Namespace: secretNamespace, Name: secretName}, secret); err != nil {
-		return "", fmt.Errorf("failed to get secret %s/%s: %w", secretNamespace, secretName, err)
+		return "", "", fmt.Errorf("failed to get secret %s/%s: %w", secretNamespace, secretName, err)
 	}
 	apiTokenBytes, ok := secret.Data["apiToken"]
+	accountIDBytes, ok := secret.Data["account_id"]
 	if !ok {
-		return "", fmt.Errorf("secret %s/%s does not contain key 'apiToken'", secretNamespace, secretName)
+		return "", "", fmt.Errorf("secret %s/%s does not contain key 'apiToken'", secretNamespace, secretName)
 	}
 	apiToken := strings.TrimSpace(string(apiTokenBytes))
-	return apiToken, nil
+	accountID := strings.TrimSpace(string(accountIDBytes))
+
+	return apiToken, accountID, nil
 }
 
 func (r *CloudflareReconciler) reconcileDNSRecord(ctx context.Context, cfCR cloudflarev1beta1.Cloudflare) error {
 	logger := log.FromContext(ctx)
 
 	// API トークンは Secret から取得する
-	apiToken, err := r.getAPITokenFromSecret(ctx)
+	apiToken, _, err := r.getAPITokenFromSecret(ctx)
 	if err != nil {
 		return err
 	}
@@ -591,7 +611,7 @@ func (r *CloudflareReconciler) reconcileDNSRecord(ctx context.Context, cfCR clou
 func (r *CloudflareReconciler) deleteDNSRecord(ctx context.Context, cfCR cloudflarev1beta1.Cloudflare) error {
 	logger := log.FromContext(ctx)
 
-	apiToken, err := r.getAPITokenFromSecret(ctx)
+	apiToken, _, err := r.getAPITokenFromSecret(ctx)
 	if err != nil {
 		return err
 	}
@@ -635,4 +655,74 @@ func (r *CloudflareReconciler) deleteDNSRecord(ctx context.Context, cfCR cloudfl
 	}
 
 	return nil
+}
+
+func (r *CloudflareReconciler) reconcileTunnel(ctx context.Context, tunnel cloudflarev1beta1.Tunnel) error {
+	logger := log.FromContext(ctx)
+	tunnelID, tunnelSecret, accountID, err := r.createTunnel(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create Cloudflare tunnel: %w", err)
+	}
+	c := fmt.Sprintf(`{"AccountTag":"%s","TunnelSecret":"%s","TunnelID":"%s"}`, accountID, tunnelSecret, tunnelID)
+	cb := []byte(c)
+	credentialBase64 := base64.StdEncoding.EncodeToString(cb)
+	data := map[string][]byte{
+		"credentials.json": []byte(credentialBase64),
+	}
+	secretName := tunnelID
+
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: "default",
+		},
+		Data: data,
+	}
+	op, err := ctrl.CreateOrUpdate(ctx, r.Client, secret, func() error {
+		return ctrl.SetControllerReference(&tunnel, secret, r.Scheme)
+	})
+
+	if err != nil {
+		logger.Error(err, "unable to create or update Secret")
+		return err
+	}
+
+	if op != controllerutil.OperationResultNone {
+		logger.Info("reconcile Secret successfully", "op", op)
+	}
+	return nil
+}
+
+func (r *CloudflareReconciler) createTunnel(ctx context.Context) (string, string, string, error) {
+	// logger := log.FromContext(ctx)
+	apiToken, accountID, err := r.getAPITokenFromSecret(ctx)
+	if err != nil {
+		return "", "", "", err
+	}
+	api, err := cf.NewWithAPIToken(apiToken)
+	if err != nil {
+		return "", "", "", fmt.Errorf("failed to create Cloudflare API client: %w", err)
+	}
+
+	randSecret := make([]byte, 32)
+	if _, err := rand.Read(randSecret); err != nil {
+		return "", "", "", err
+	}
+	tunnelSecret := base64.StdEncoding.EncodeToString(randSecret)
+
+	rc := cloudflare.AccountIdentifier(accountID)
+
+	params := cloudflare.TunnelCreateParams{
+		Name:   "test",
+		Secret: tunnelSecret,
+		// Indicates if this is a locally or remotely configured tunnel "local" or "cloudflare"
+		ConfigSrc: "local",
+	}
+
+	tunnel, err := api.CreateTunnel(ctx, rc, params)
+	if err != nil {
+		return "", "", "", err
+
+	}
+	return tunnel.ID, tunnel.Secret, accountID, nil
 }
