@@ -8,8 +8,8 @@ metadata:
 spec:
   # TODO(user): Add fields here
   replicas: 1
-  tunnel_name: "test34"
+  tunnel_name: "test"
   ingress:
   - hostname: te.qpid.jp
-    service: http://web-service:80
+    service: http://nginx-service:80
 

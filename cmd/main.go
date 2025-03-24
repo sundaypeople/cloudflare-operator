@@ -210,6 +210,7 @@ func main() {
 		setupLog.Error(err, "unable to create controller", "controller", "Cloudflare")
 		os.Exit(1)
 	}
+
 	// nolint:goconst
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
 		if err = webhookcloudflarev1beta1.SetupCloudflareWebhookWithManager(mgr); err != nil {

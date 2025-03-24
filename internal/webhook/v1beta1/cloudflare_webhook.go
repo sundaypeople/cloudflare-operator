@@ -19,13 +19,19 @@ package v1beta1
 import (
 	"context"
 	"fmt"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
 
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/webhook"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 
+	"github.com/cloudflare/cloudflare-go"
 	cloudflarev1beta1 "github.com/laininthewired/cloudflare-ingress-controller/api/v1beta1"
 )
 
@@ -35,8 +41,13 @@ var cloudflarelog = logf.Log.WithName("cloudflare-resource")
 
 // SetupCloudflareWebhookWithManager registers the webhook for Cloudflare in the manager.
 func SetupCloudflareWebhookWithManager(mgr ctrl.Manager) error {
+	validator := &CloudflareCustomValidator{}
+	if err := validator.InjectClient(mgr.GetClient()); err != nil {
+		return err
+	}
 	return ctrl.NewWebhookManagedBy(mgr).For(&cloudflarev1beta1.Cloudflare{}).
-		WithValidator(&CloudflareCustomValidator{}).
+		// WithValidator(&CloudflareCustomValidator{}).
+		WithValidator(validator).
 		WithDefaulter(&CloudflareCustomDefaulter{}).
 		Complete()
 }
@@ -82,22 +93,78 @@ func (d *CloudflareCustomDefaulter) Default(ctx context.Context, obj runtime.Obj
 // as this struct is used only for temporary operations and does not need to be deeply copied.
 type CloudflareCustomValidator struct {
 	// TODO(user): Add more fields as needed for validation
+	Client client.Client
 }
 
 var _ webhook.CustomValidator = &CloudflareCustomValidator{}
 
+// InjectClient implements admission.InjectClient.
+func (v *CloudflareCustomValidator) InjectClient(c client.Client) error {
+	v.Client = c
+	return nil
+}
+
 // ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the type Cloudflare.
+// ValidateCreate implements webhook.CustomValidator so a webhook will be registered for the Cloudflare type.
 func (v *CloudflareCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
-	cloudflare, ok := obj.(*cloudflarev1beta1.Cloudflare)
+	// オブジェクトの型アサーション
+	cf, ok := obj.(*cloudflarev1beta1.Cloudflare)
 	if !ok {
 		return nil, fmt.Errorf("expected a Cloudflare object but got %T", obj)
 	}
-	cloudflarelog.Info("Validation for Cloudflare upon creation", "name", cloudflare.GetName())
 
-	// TODO(user): fill in your validation logic upon object creation.
+	cloudflarelog.Info("Validation for Cloudflare upon creation", "name", cf.GetName())
+
+	// Secret から Cloudflare API の認証情報を取得する
+	secret := &corev1.Secret{}
+	secretName := "cloudflare-api-token"
+	secretNamespace := "default" // 必要に応じて調整
+	if err := v.Client.Get(ctx, types.NamespacedName{Namespace: secretNamespace, Name: secretName}, secret); err != nil {
+		return nil, fmt.Errorf("failed to get secret %s/%s: %w", secretNamespace, secretName, err)
+	}
+
+	apiTokenBytes, ok := secret.Data["apiToken"]
+	if !ok {
+		return nil, fmt.Errorf("secret %s/%s does not contain key 'apiToken'", secretNamespace, secretName)
+	}
+	accountIDBytes, ok := secret.Data["account_id"]
+	if !ok {
+		return nil, fmt.Errorf("secret %s/%s does not contain key 'account_id'", secretNamespace, secretName)
+	}
+	apiToken := strings.TrimSpace(string(apiTokenBytes))
+	accountID := strings.TrimSpace(string(accountIDBytes))
+
+	// Cloudflare API クライアントの生成
+	cfAPI, err := cloudflare.NewWithAPIToken(apiToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Cloudflare API client: %w", err)
+	}
+
+	// 既存のトンネル一覧を取得して、同じ TunnelName が既に存在しないかチェック
+	tunnels, _, err := cfAPI.ListTunnels(ctx, cloudflare.AccountIdentifier(accountID), cloudflare.TunnelListParams{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list tunnels: %w", err)
+	}
+	for _, t := range tunnels {
+		if t.Name == cf.Spec.TunnelName && t.DeletedAt == nil {
+			return nil, fmt.Errorf("tunnel name %q is already in use", cf.Spec.TunnelName)
+		}
+	}
 
 	return nil, nil
 }
+
+// func (v *CloudflareCustomValidator) ValidateCreate(ctx context.Context, obj runtime.Object) (admission.Warnings, error) {
+// 	cloudflare, ok := obj.(*cloudflarev1beta1.Cloudflare)
+// 	if !ok {
+// 		return nil, fmt.Errorf("expected a Cloudflare object but got %T", obj)
+// 	}
+// 	cloudflarelog.Info("Validation for Cloudflare upon creation", "name", cloudflare.GetName())
+
+// 	// TODO(user): fill in your validation logic upon object creation.
+
+// 	return nil, nil
+// }
 
 // ValidateUpdate implements webhook.CustomValidator so a webhook will be registered for the type Cloudflare.
 func (v *CloudflareCustomValidator) ValidateUpdate(ctx context.Context, oldObj, newObj runtime.Object) (admission.Warnings, error) {
