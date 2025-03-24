@@ -17,6 +17,8 @@ jobs:
       # 必要に応じて他の権限も追加
 
     steps:
+
+
       - name: Clone the code
         uses: actions/checkout@v4
         with:
@@ -26,6 +28,14 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: '1.23.0'
+          
+      - name: Install Kubebuilder
+        run: |
+          KUBEBUILDER_VERSION=3.2.0  # 利用したいバージョンに置き換えてください
+          wget https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${KUBEBUILDER_VERSION}/kubebuilder_${KUBEBUILDER_VERSION}_linux_amd64.tar.gz
+          tar -xzvf kubebuilder_${KUBEBUILDER_VERSION}_linux_amd64.tar.gz
+          sudo mv kubebuilder_${KUBEBUILDER_VERSION}_linux_amd64 /usr/local/kubebuilder
+          echo 'export PATH=$PATH:/usr/local/kubebuilder/bin' >> $GITHUB_ENV
         
       - name: Bump version and push tag
         id: version
