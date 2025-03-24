@@ -89,8 +89,10 @@ jobs:
           
       - name: Install yq
         run: |
-          wget https://github.com/mikefarah/yq/releases/download/v4.34.1/yq_linux_amd64 -O /home/runner/.local/bin/yq
-          chmod +x /home/runner/.local/bin/yq
+          wget https://github.com/mikefarah/yq/releases/download/v4.34.1/yq_linux_amd64 -O /usr/local/bin/
+          chmod +x /usr/local/bin/yq
+
+
 
       - name: Update appVersion in Chart.yaml
         # working-directory: ${{ env.TARGET_REPO }}
