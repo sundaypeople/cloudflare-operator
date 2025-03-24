@@ -38,11 +38,16 @@ type CloudflareSpec struct {
 	//+kubebuilder:validation:Required
 	// +kubebuilder:default=1
 
-	Replicas int32 `json:"replicas,omitempty"`
+	// Replicas int32 `json:"replicas,omitempty"`
 
 	//+kubebuilder:validation:Required
 
-	TunnelID string `json:"tunnel_id"`
+	TunnelName string `json:"tunnel_name"`
+
+	//+kubebuilder:validation:Required
+	// +kubebuilder:default=1
+
+	Replicas int32 `json:"replicas,omitempty"`
 }
 type IngressRule struct {
 	//+kubebuilder:validation:Required

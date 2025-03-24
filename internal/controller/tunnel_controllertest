@@ -18,10 +18,7 @@ package controller
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
-	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -57,37 +54,12 @@ type TunnelReconciler struct {
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.20.0/pkg/reconcile
 
 func (r *TunnelReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
-	// apiToken, _, err := r.getAPITokenFromSecret(ctx)
-	// if err != nil {
-	// 	return ctrl.Result{}, err
-	// }
-
-	// tunnelName := "my-tunnel" // 例として固定値
-
-	var tunnel cloudflarev1beta1.Tunnel
-
-	if err := r.Get(ctx, req.NamespacedName, &tunnel); err != nil {
-		return ctrl.Result{}, client.IgnoreNotFound(err)
-	}
-
-	if tunnel.Status.Phase == "Running" {
-		logger.Info("Tunnel already running", "tunnel", tunnel.Spec.TunnelID)
-		return ctrl.Result{}, nil
-	}
-	if tunnel.Spec.TunnelID == "" {
-	}
+	_ = log.FromContext(ctx)
 
 	// TODO(user): your logic here
-	// API トークンは Secret から取得する
 
 	return ctrl.Result{}, nil
 }
-
-// func (r *TunnelReconciler) reconcileSecret(ctx context.Context, tunnel cloudflarev1beta1.Tunnel) error {
-
-// }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *TunnelReconciler) SetupWithManager(mgr ctrl.Manager) error {
@@ -95,20 +67,4 @@ func (r *TunnelReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&cloudflarev1beta1.Tunnel{}).
 		Named("tunnel").
 		Complete(r)
-}
-
-func (r *TunnelReconciler) getAPITokenFromSecret(ctx context.Context) (string, error) {
-	// ここでは固定値として設定しています。必要に応じて CRD の Spec や ConfigMap 等から動的に取得してください。
-	secret := &corev1.Secret{}
-	secretName := "cloudflare-api-token"
-	secretNamespace := "default"
-	if err := r.Get(ctx, client.ObjectKey{Namespace: secretNamespace, Name: secretName}, secret); err != nil {
-		return "", fmt.Errorf("failed to get secret %s/%s: %w", secretNamespace, secretName, err)
-	}
-	apiTokenBytes, ok := secret.Data["apiToken"]
-	if !ok {
-		return "", fmt.Errorf("secret %s/%s does not contain key 'apiToken'", secretNamespace, secretName)
-	}
-	apiToken := strings.TrimSpace(string(apiTokenBytes))
-	return apiToken, nil
 }

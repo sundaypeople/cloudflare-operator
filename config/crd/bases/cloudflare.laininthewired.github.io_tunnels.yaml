@@ -39,17 +39,14 @@ spec:
           spec:
             description: TunnelSpec defines the desired state of Tunnel.
             properties:
-              credentialsSecret:
-                description: |-
-                  CredentialsSecret は、Cloudflare の認証情報を格納する Secret 名です。
-                  指定がなければ、Reconcile 時に自動生成した Secret 名を利用し、
-                  その Secret に認証情報を登録します。
+              replicas:
+                default: 1
+                format: int32
+                type: integer
+              tunnel_name:
                 type: string
-              tunnelID:
-                description: |-
-                  TunnelID が指定されていれば、その Tunnel を再利用します。
-                  指定がなければ、Reconcile で新規作成します。
-                type: string
+            required:
+            - replicas
             type: object
           status:
             description: TunnelStatus defines the observed state of Tunnel.

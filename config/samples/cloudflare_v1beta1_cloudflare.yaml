@@ -7,11 +7,9 @@ metadata:
   name: cloudflare-sample
 spec:
   # TODO(user): Add fields here
-  tunnel_id: a15bd9df-7eab-430c-97f7-85de05773eef
+  replicas: 1
+  tunnel_name: "test34"
   ingress:
-  - hostname: crd.qpid.jp
+  - hostname: te.qpid.jp
     service: http://web-service:80
-  - hostname: test.qpid.jp
-    service: http://10.0.10.105:80
-  replicas: 2
 

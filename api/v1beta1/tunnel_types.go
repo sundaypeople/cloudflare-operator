@@ -30,14 +30,19 @@ type TunnelSpec struct {
 
 	// TunnelID が指定されていれば、その Tunnel を再利用します。
 	// 指定がなければ、Reconcile で新規作成します。
-	// +optional
-	TunnelID string `json:"tunnelID"`
 
+	// +optional
+	TunnelName string `json:"tunnel_name"`
+
+	//+kubebuilder:validation:Required
+	// +kubebuilder:default=1
+
+	Replicas int32 `json:"replicas,omitempty"`
 	// CredentialsSecret は、Cloudflare の認証情報を格納する Secret 名です。
 	// 指定がなければ、Reconcile 時に自動生成した Secret 名を利用し、
 	// その Secret に認証情報を登録します。
 	// +optional
-	CredentialsSecret string `json:"credentialsSecret"`
+	// CredentialsSecret string `json:"credentialsSecret"`
 }
 
 // TunnelStatus defines the observed state of Tunnel.

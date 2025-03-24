@@ -55,12 +55,12 @@ spec:
                 default: 1
                 format: int32
                 type: integer
-              tunnel_id:
+              tunnel_name:
                 type: string
             required:
             - ingress
             - replicas
-            - tunnel_id
+            - tunnel_name
             type: object
           status:
             description: CloudflareStatus defines the observed state of Cloudflare.

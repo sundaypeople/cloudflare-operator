@@ -42,7 +42,6 @@ rules:
   - cloudflare.laininthewired.github.io
   resources:
   - cloudflares
-  - tunnels
   verbs:
   - create
   - delete
@@ -55,14 +54,12 @@ rules:
   - cloudflare.laininthewired.github.io
   resources:
   - cloudflares/finalizers
-  - tunnels/finalizers
   verbs:
   - update
 - apiGroups:
   - cloudflare.laininthewired.github.io
   resources:
   - cloudflares/status
-  - tunnels/status
   verbs:
   - get
   - patch
