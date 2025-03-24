@@ -23,76 +23,57 @@ import (
 // EDIT THIS FILE!  THIS IS SCAFFOLDING FOR YOU TO OWN!
 // NOTE: json tags are required.  Any new fields you add must have json tags for the fields to be serialized.
 
-// CloudflareSpec defines the desired state of Cloudflare.
-type CloudflareSpec struct {
+// TunnelSpec defines the desired state of Tunnel.
+type TunnelSpec struct {
 	// INSERT ADDITIONAL SPEC FIELDS - desired state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
 
-	// Foo is an example field of Cloudflare. Edit cloudflare_types.go to remove/update
-	// Foo string `json:"foo,omitempty"`
+	// TunnelID が指定されていれば、その Tunnel を再利用します。
+	// 指定がなければ、Reconcile で新規作成します。
 
-	//+kubebuilder:validation:Required
-
-	Ingress []IngressRule `json:"ingress,omitempty"`
-
-	//+kubebuilder:validation:Required
-	// +kubebuilder:default=1
-
-	// Replicas int32 `json:"replicas,omitempty"`
-
-	//+kubebuilder:validation:Required
-
+	// +optional
 	TunnelName string `json:"tunnel_name"`
 
 	//+kubebuilder:validation:Required
 	// +kubebuilder:default=1
 
 	Replicas int32 `json:"replicas,omitempty"`
-}
-type IngressRule struct {
-	//+kubebuilder:validation:Required
-
-	Hostname string `json:"hostname"`
-
-	//+kubebuilder:validation:Required
-
-	Service string `json:"service"`
+	// CredentialsSecret は、Cloudflare の認証情報を格納する Secret 名です。
+	// 指定がなければ、Reconcile 時に自動生成した Secret 名を利用し、
+	// その Secret に認証情報を登録します。
+	// +optional
+	// CredentialsSecret string `json:"credentialsSecret"`
 }
 
-// CloudflareStatus defines the observed state of Cloudflare.
-type CloudflareStatus struct {
+// TunnelStatus defines the observed state of Tunnel.
+type TunnelStatus struct {
 	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
 	// Important: Run "make" to regenerate code after modifying this file
-
+	Phase      string             `json:"phase,omitempty"`
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 }
-
-const (
-	TypeCloudflareViewAvailable = "Available"
-	TypeCloudflareViewDegraded  = "Degraded"
-)
 
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 
-// Cloudflare is the Schema for the cloudflares API.
-type Cloudflare struct {
+// Tunnel is the Schema for the tunnels API.
+type Tunnel struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   CloudflareSpec   `json:"spec,omitempty"`
-	Status CloudflareStatus `json:"status,omitempty"`
+	Spec   TunnelSpec   `json:"spec,omitempty"`
+	Status TunnelStatus `json:"status,omitempty"`
 }
 
 // +kubebuilder:object:root=true
 
-// CloudflareList contains a list of Cloudflare.
-type CloudflareList struct {
+// TunnelList contains a list of Tunnel.
+type TunnelList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []Cloudflare `json:"items"`
+	Items           []Tunnel `json:"items"`
 }
 
 func init() {
-	SchemeBuilder.Register(&Cloudflare{}, &CloudflareList{})
+	SchemeBuilder.Register(&Tunnel{}, &TunnelList{})
 }
