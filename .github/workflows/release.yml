@@ -12,6 +12,10 @@ jobs:
   release:
     name: Run on alma9 self host
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # 必要に応じて他の権限も追加
+
     steps:
       - name: Clone the code
         uses: actions/checkout@v4
