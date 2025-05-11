@@ -101,9 +101,19 @@ jobs:
           yq eval '.controllerManager.container.image.repository = "${{ github.repository_owner }}/cloudflare-controller"' -i dist/chart/values.yaml
           yq eval '.controllerManager.container.image.tag = "${{ steps.version.outputs.new_tag }}"' -i dist/chart/values.yaml
 
+      - name: debug
+        run: | 
+          cat ./dist/chart/Chart.yaml
+          cat ./dist/chart/values.yaml
+
       - name: Sync files using rsync
         run: |
           rsync -av --delete ./dist/chart/ ${{ env.TARGET_REPO }}/charts
+
+      - name: debug
+        run: | 
+          cat ./dist/chart/ ${{ env.TARGET_REPO }}/charts/Chart.yaml
+          cat ./dist/chart/ ${{ env.TARGET_REPO }}/charts/values.yaml
 
       - name: Commit changes in target repository
         uses: EndBug/add-and-commit@v9
