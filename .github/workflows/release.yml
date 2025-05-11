@@ -43,7 +43,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WITH_V: true
-          DRY_RUN: true
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -60,13 +59,13 @@ jobs:
           username: ${{ env.USERNAME }}
           password: ${{ env.TOKEN }}
 
-      # - name: Build and push
-      #   uses: docker/build-push-action@v6
-      #   env:
-      #     USERNAME: ${{ vars.DOCKERHUB_USERNAME }} 
-      #   with:
-      #     push: true
-      #     tags: ${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.new_tag }}
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        env:
+          USERNAME: ${{ vars.DOCKERHUB_USERNAME }} 
+        with:
+          push: true
+          tags: ${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.new_tag }}
   
       - name: make manifest
         run: make manifests
@@ -116,18 +115,18 @@ jobs:
           cat  ${{ env.TARGET_REPO }}/charts/Chart.yaml
           cat  ${{ env.TARGET_REPO }}/charts/values.yaml
 
-      # - name: Commit changes in target repository
-      #   uses: EndBug/add-and-commit@v9
-      #   with:
-      #     author_name: "GitHub Actions"
-      #     author_email: "actions@github.com"
-      #     message: "Sync files from source repository"
-      #     cwd: ${{ env.TARGET_REPO }} 
+      - name: Commit changes in target repository
+        uses: EndBug/add-and-commit@v9
+        with:
+          author_name: "GitHub Actions"
+          author_email: "actions@github.com"
+          message: "Sync files from source repository"
+          cwd: ${{ env.TARGET_REPO }} 
 
-      # - name: Push changes to target repository
-      #   uses: ad-m/github-push-action@v0.6.0
-      #   with:
-      #     github_token: ${{ steps.create.outputs.token }} 
-      #     repository: ${{ github.repository_owner}}/${{ env.TARGET_REPO }} 
-      #     branch: actions
-      #     directory: ${{ env.TARGET_REPO }} 
+      - name: Push changes to target repository
+        uses: ad-m/github-push-action@v0.6.0
+        with:
+          github_token: ${{ steps.create.outputs.token }} 
+          repository: ${{ github.repository_owner}}/${{ env.TARGET_REPO }} 
+          branch: actions
+          directory: ${{ env.TARGET_REPO }} 
