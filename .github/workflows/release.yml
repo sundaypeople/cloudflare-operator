@@ -65,7 +65,7 @@ jobs:
           USERNAME: ${{ vars.DOCKERHUB_USERNAME }} 
         with:
           push: true
-          tags: ${{ env.USERNAME }}/cloudflare-operator:${{ steps.version.outputs.new_tag }}
+          tags: ${{ env.USERNAME }}/cloudflare-controller:${{ steps.version.outputs.new_tag }}
   
       - name: make manifest
         run: make manifests
