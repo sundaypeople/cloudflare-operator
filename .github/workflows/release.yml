@@ -109,7 +109,7 @@ jobs:
 
       - name: Sync files using rsync
         run: |
-          rsync -av --delete ./dist/chart/ ${{ env.TARGET_REPO }}/charts
+          rsync -avc --delete ./dist/chart/ ${{ env.TARGET_REPO }}/charts
 
       - name: debug
         run: | 
