@@ -105,49 +105,30 @@ func (r *CloudflareReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	logger := log.FromContext(ctx)
 
 	var cf cloudflarev1beta1.Cloudflare
-	err := r.Get(ctx, req.NamespacedName, &cf)
-	if errors.IsNotFound(err) {
-		return ctrl.Result{}, nil
-	}
-	// var tunnel cloudflarev1beta1.Tunnel
+	var tunnel cloudflarev1beta1.Tunnel
 
-	// err := r.Get(ctx, req.NamespacedName, &tunnel)
+	err := r.Get(ctx, req.NamespacedName, &tunnel)
 	// test := "test2"
 	logger.Info("aaa3", "tunnel", req.NamespacedName)
 
-	err = r.reconcileTunnel(ctx, cf)
+	err = r.reconcileTunnel(ctx, tunnel)
 	if err != nil {
 		result, err2 := r.updateStatus(ctx, cf)
 		logger.Error(err2, "unable to update status")
 		return result, err
 	}
 
+	err = r.Get(ctx, req.NamespacedName, &cf)
+	if errors.IsNotFound(err) {
+		return ctrl.Result{}, nil
+	}
 	if err != nil {
 		logger.Error(err, "unable to get Cloudflare", "name", req.NamespacedName)
 		return ctrl.Result{}, err
 	}
-
-	finalizerName := "finalizer.cloudflare.laininthewired.github.io"
-	if !controllerutil.ContainsFinalizer(&cf, finalizerName) {
-		controllerutil.AddFinalizer(&cf, finalizerName)
-		err = r.Update(ctx, &cf)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-	}
 	if !cf.ObjectMeta.DeletionTimestamp.IsZero() {
-		fmt.Println("start delete")
 		if err := r.deleteDNSRecord(ctx, cf); err != nil {
 			logger.Error(err, "failed to delete DNS records during finalization")
-			return ctrl.Result{}, err
-		}
-		if err := r.deleteTunnel(ctx, cf); err != nil {
-			logger.Error(err, "failed to delete tunnel during finalization")
-			return ctrl.Result{}, err
-		}
-		controllerutil.RemoveFinalizer(&cf, finalizerName)
-		err = r.Update(ctx, &cf)
-		if err != nil {
 			return ctrl.Result{}, err
 		}
 		// Finalizer の解除処理をここで実施（必要に応じて）
@@ -200,18 +181,8 @@ func (r *CloudflareReconciler) reconcileConfigMap(ctx context.Context, cloudflar
 	}
 	ingressRules = append(ingressRules, ingressRule)
 	// 構造体をYAMLにシリアライズ
-
-	annotations := cloudflare.GetAnnotations()
-	if annotations == nil {
-		return fmt.Errorf("annotations not found on Tunnel resource")
-	}
-
-	tunnelID, ok := annotations["cloudflare.io/tunnel-id"]
-	if !ok {
-		return fmt.Errorf("annotation cloudflare.io/tunnel-id not found on Tunnel resource")
-	}
 	spec := CloudflareConfig{
-		Tunnel:          tunnelID, // 必須フィールドを設定
+		Tunnel:          cloudflare.Spec.TunnelID, // 必須フィールドを設定
 		CredentialsFile: "/etc/cloudflared/creds/credentials.json",
 		Ingress:         ingressRules,
 		Metrics:         "0.0.0.0:2000",
@@ -334,7 +305,7 @@ func (r *CloudflareReconciler) reconcileDeployment(ctx context.Context, cloudlfa
 							WithName("creds").
 							WithSecret(
 								corev1apply.SecretVolumeSource().
-									WithSecretName("cloudflare-"+cloudlfare.Spec.TunnelName),
+									WithSecretName("tunnel-credentials"),
 							),
 						corev1apply.Volume().
 							WithName("config").
@@ -507,7 +478,7 @@ func (r *CloudflareReconciler) getAPITokenFromSecret(ctx context.Context) (strin
 	return apiToken, accountID, nil
 }
 
-func (r *CloudflareReconciler) reconcileDNSRecord(ctx context.Context, cloudflare cloudflarev1beta1.Cloudflare) error {
+func (r *CloudflareReconciler) reconcileDNSRecord(ctx context.Context, cfCR cloudflarev1beta1.Cloudflare) error {
 	logger := log.FromContext(ctx)
 
 	// API トークンは Secret から取得する
@@ -522,26 +493,16 @@ func (r *CloudflareReconciler) reconcileDNSRecord(ctx context.Context, cloudflar
 		return fmt.Errorf("failed to create Cloudflare API client: %w", err)
 	}
 
-	annotations := cloudflare.GetAnnotations()
-	if annotations == nil {
-		return fmt.Errorf("annotations not found on Tunnel resource")
+	tunnelID := cfCR.Spec.TunnelID
+	if tunnelID == "" {
+		return fmt.Errorf("tunnelID is empty in CRD spec")
 	}
-
-	tunnelID, ok := annotations["cloudflare.io/tunnel-id"]
-	if !ok {
-		return fmt.Errorf("annotation cloudflare.io/tunnel-id not found on Tunnel resource")
-	}
-
-	// tunnelID := cloudflare.Spec.TunnelID
-	// if tunnelID == "" {
-	// 	return fmt.Errorf("tunnelID is empty in CRD spec")
-	// }
 	targetCNAME := fmt.Sprintf("%s.cfargotunnel.com", tunnelID)
 
 	// CRD の ingress ルールをゾーン毎にグループ化（key: zoneID、value: 対象ホストの存在マップ）
 	desiredRecords := make(map[string]map[string]bool)
 
-	for _, rule := range cloudflare.Spec.Ingress {
+	for _, rule := range cfCR.Spec.Ingress {
 		if rule.Hostname == "" {
 			continue
 		}
@@ -577,7 +538,7 @@ func (r *CloudflareReconciler) reconcileDNSRecord(ctx context.Context, cloudflar
 
 		if len(records) == 0 {
 			// レコードがなければ作成
-			proxied := true
+			proxied := false
 			createParams := cf.CreateDNSRecordParams{
 				Type:    "CNAME",
 				Name:    rule.Hostname,
@@ -695,65 +656,29 @@ func (r *CloudflareReconciler) deleteDNSRecord(ctx context.Context, cfCR cloudfl
 	return nil
 }
 
-func (r *CloudflareReconciler) reconcileTunnel(ctx context.Context, cloudflare cloudflarev1beta1.Cloudflare) error {
+func (r *CloudflareReconciler) reconcileTunnel(ctx context.Context, tunnel cloudflarev1beta1.Tunnel) error {
 	logger := log.FromContext(ctx)
-	tunnelID, tunnelSecret, accountID, err := r.createTunnel(ctx, cloudflare.Spec.TunnelName)
+	tunnelID, tunnelSecret, accountID, err := r.createTunnel(ctx, tunnel.Spec.TunnelName)
 	if err != nil {
 		return fmt.Errorf("failed to create Cloudflare tunnel: %w", err)
 	}
-	fmt.Println("tunnel Secret:", tunnelSecret)
-
-	// CRのannotationにtunnelIDを追加する
-	if cloudflare.Annotations == nil {
-		cloudflare.Annotations = map[string]string{}
-	}
-	cloudflare.Annotations["cloudflare.io/tunnel-id"] = tunnelID
-
-	// CRの更新を実施
-	if err := r.Update(ctx, &cloudflare); err != nil {
-		logger.Error(err, "failed to update Tunnel resource with tunnel ID annotation")
-		return err
-	}
-
-	if tunnelSecret == "" {
-		fmt.Println("secret:", tunnelSecret)
-		return nil
-	}
-
-	// if tunnelSecret != "" {
-	// 	// 例: Secret 名は "cloudflare-" + tunnelName としているのでそれを取得
-	// 	var existingSecret corev1.Secret
-	// 	secretName := "cloudflare-" + cloudflare.Spec.TunnelName
-	// 	if err := r.Get(ctx, client.ObjectKey{Namespace: "default", Name: secretName}, &existingSecret); err != nil {
-	// 		return fmt.Errorf("tunnelSecret is empty and failed to retrieve existing secret: %w", err)
-	// 	}
-	// 	// 既存の credentials.json を取得して JSON の TunnelSecret を抜き出す処理を実装するか、
-	// 	// 単純に既存の Secret をそのまま利用する
-	// 	op, err := ctrl.CreateOrUpdate(ctx, r.Client, existingSecret, func() error {
-	// 		return ctrl.SetControllerReference(&cloudflare, secret, r.Scheme)
-	// 	})
-	// 	tunnelSecret = extractTunnelSecret(existingSecret.Data["credentials.json"])
-	// 	if tunnelSecret == "" {
-	// 		return fmt.Errorf("tunnelSecret is empty even after checking existing secret")
-	// 	}
-	// }
-
 	c := fmt.Sprintf(`{"AccountTag":"%s","TunnelSecret":"%s","TunnelID":"%s"}`, accountID, tunnelSecret, tunnelID)
-	// cb := []byte(c)
-	// credentialBase64 := base64.StdEncoding.EncodeToString(cb)
+	cb := []byte(c)
+	credentialBase64 := base64.StdEncoding.EncodeToString(cb)
 	data := map[string][]byte{
-		"credentials.json": []byte(c),
+		"credentials.json": []byte(credentialBase64),
 	}
+	secretName := tunnelID
 
 	secret := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      "cloudflare-" + cloudflare.Spec.TunnelName,
+			Name:      secretName,
 			Namespace: "default",
 		},
 		Data: data,
 	}
 	op, err := ctrl.CreateOrUpdate(ctx, r.Client, secret, func() error {
-		return ctrl.SetControllerReference(&cloudflare, secret, r.Scheme)
+		return ctrl.SetControllerReference(&tunnel, secret, r.Scheme)
 	})
 
 	if err != nil {
@@ -792,14 +717,14 @@ func (r *CloudflareReconciler) createTunnel(ctx context.Context, tunnelName stri
 		return "", "", "", err
 	}
 	for _, v := range tunnels {
-		fmt.Println("v.name:", v.Name, " tunnelsecret", v.Secret, "status:", v.Status, "DeletedAt", v.DeletedAt)
-		if v.Name == tunnelName && v.DeletedAt == nil {
-			return v.ID, v.Secret, accountID, nil
+		fmt.Println("v.name:", v.Name, " tunnelName", tunnelName)
+		if v.Name == tunnelName {
+			return v.ID, v.Secret, accountID, err
 		}
 	}
 
 	params := cloudflare.TunnelCreateParams{
-		Name:   tunnelName,
+		Name:   "test",
 		Secret: tunnelSecret,
 		// Indicates if this is a locally or remotely configured tunnel "local" or "cloudflare"
 		ConfigSrc: "local",
@@ -810,31 +735,5 @@ func (r *CloudflareReconciler) createTunnel(ctx context.Context, tunnelName stri
 		return "", "", "", err
 
 	}
-	fmt.Println("aaaaaaaaaaaa")
-	return tunnel.ID, tunnelSecret, accountID, nil
-}
-func (r *CloudflareReconciler) deleteTunnel(ctx context.Context, crf cloudflarev1beta1.Cloudflare) error {
-	logger := log.FromContext(ctx)
-	apiToken, accountID, err := r.getAPITokenFromSecret(ctx)
-	if err != nil {
-		return err
-	}
-	api, err := cf.NewWithAPIToken(apiToken)
-	if err != nil {
-		return fmt.Errorf("failed to create Cloudflare API client: %w", err)
-	}
-
-	rc := cloudflare.AccountIdentifier(accountID)
-
-	err = api.CleanupTunnelConnections(ctx, rc, crf.Annotations["cloudflare.io/tunnel-id"])
-	if err != nil {
-		return err
-	}
-	err = api.DeleteTunnel(ctx, rc, crf.Annotations["cloudflare.io/tunnel-id"])
-	if err != nil {
-		return err
-	}
-
-	logger.Info("DNS record deleted", "tunnelID", crf.Annotations["cloudflare.io/tunnel-id"])
-	return nil
+	return tunnel.ID, tunnel.Secret, accountID, nil
 }

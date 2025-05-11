@@ -3,6 +3,7 @@
 # It should be run by config/default
 resources:
 - bases/cloudflare.laininthewired.github.io_cloudflares.yaml
+- bases/cloudflare.laininthewired.github.io_tunnels.yaml
 # +kubebuilder:scaffold:crdkustomizeresource
 
 patches:

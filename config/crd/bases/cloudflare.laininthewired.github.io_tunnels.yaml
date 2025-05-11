@@ -4,20 +4,20 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.2
-  name: cloudflares.cloudflare.laininthewired.github.io
+  name: tunnels.cloudflare.laininthewired.github.io
 spec:
   group: cloudflare.laininthewired.github.io
   names:
-    kind: Cloudflare
-    listKind: CloudflareList
-    plural: cloudflares
-    singular: cloudflare
+    kind: Tunnel
+    listKind: TunnelList
+    plural: tunnels
+    singular: tunnel
   scope: Namespaced
   versions:
   - name: v1beta1
     schema:
       openAPIV3Schema:
-        description: Cloudflare is the Schema for the cloudflares API.
+        description: Tunnel is the Schema for the tunnels API.
         properties:
           apiVersion:
             description: |-
@@ -37,20 +37,8 @@ spec:
           metadata:
             type: object
           spec:
-            description: CloudflareSpec defines the desired state of Cloudflare.
+            description: TunnelSpec defines the desired state of Tunnel.
             properties:
-              ingress:
-                items:
-                  properties:
-                    hostname:
-                      type: string
-                    service:
-                      type: string
-                  required:
-                  - hostname
-                  - service
-                  type: object
-                type: array
               replicas:
                 default: 1
                 format: int32
@@ -58,12 +46,10 @@ spec:
               tunnel_name:
                 type: string
             required:
-            - ingress
             - replicas
-            - tunnel_name
             type: object
           status:
-            description: CloudflareStatus defines the observed state of Cloudflare.
+            description: TunnelStatus defines the observed state of Tunnel.
             properties:
               conditions:
                 items:
@@ -121,6 +107,11 @@ spec:
                   - type
                   type: object
                 type: array
+              phase:
+                description: |-
+                  INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
+                  Important: Run "make" to regenerate code after modifying this file
+                type: string
             type: object
         type: object
     served: true
