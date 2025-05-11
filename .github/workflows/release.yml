@@ -99,6 +99,7 @@ jobs:
         run: |
           # ここでは appVersion を "0.2.0" に更新
           yq eval '.appVersion = "${{ steps.version.outputs.new_tag }}"' -i dist/chart/Chart.yaml
+          yq eval '.controllerManager.container.image.repository = "${{ github.repository_owner }}/cloudflare-controller"' -i dist/chart/values.yaml
           yq eval '.controllerManager.container.image.tag = "${{ steps.version.outputs.new_tag }}"' -i dist/chart/values.yaml
 
       - name: Sync files using rsync
