@@ -96,6 +96,8 @@ jobs:
 
       - name: Update appVersion in Chart.yaml
         # working-directory: ${{ env.TARGET_REPO }}
+        env:
+          USERNAME: ${{ vars.DOCKERHUB_USERNAME }} 
         run: |
           yq eval '.appVersion = "${{ steps.version.outputs.new_tag }}"' -i dist/chart/Chart.yaml
           yq eval '.controllerManager.container.image.repository = "${{ env.USERNAME }}/cloudflare-controller"' -i dist/chart/values.yaml
