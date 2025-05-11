@@ -98,7 +98,7 @@ jobs:
         # working-directory: ${{ env.TARGET_REPO }}
         run: |
           yq eval '.appVersion = "${{ steps.version.outputs.new_tag }}"' -i dist/chart/Chart.yaml
-          yq eval '.controllerManager.container.image.repository = "${{ github.repository_owner }}/cloudflare-controller"' -i dist/chart/values.yaml
+          yq eval '.controllerManager.container.image.repository = "${{ env.USERNAME }}/cloudflare-controller"' -i dist/chart/values.yaml
           yq eval '.controllerManager.container.image.tag = "${{ steps.version.outputs.new_tag }}"' -i dist/chart/values.yaml
 
       - name: debug
